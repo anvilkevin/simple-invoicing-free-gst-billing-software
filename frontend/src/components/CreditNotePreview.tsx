@@ -4,10 +4,13 @@ import { useEscapeClose } from '../hooks/useEscapeClose';
 import api, { getApiErrorMessage } from '../api/client';
 import ShareModal from './ShareModal';
 import PreviewToolbar from './PreviewToolbar';
+import { noteDocumentFileName, type NoteDocumentLabel } from '../utils/noteDocument';
 
 type CreditNotePreviewProps = {
   creditNoteId: number;
   creditNoteNumber?: string | null;
+  /** An inward note prints, downloads and shares as our Debit Note. */
+  documentLabel?: NoteDocumentLabel;
   /** A cancelled note can still be viewed and downloaded, but not shared. */
   canShare?: boolean;
   /** The customer's phone as stored — free text, and often absent. */
@@ -21,6 +24,7 @@ type CreditNotePreviewProps = {
 export default function CreditNotePreview({
   creditNoteId,
   creditNoteNumber,
+  documentLabel = 'Credit Note',
   canShare = true,
   ledgerPhone,
   companyName,
@@ -33,6 +37,9 @@ export default function CreditNotePreview({
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [pdfError, setPdfError] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
+  // "credit note" mid-sentence, "Credit note" at the start of one.
+  const noun = documentLabel.toLowerCase();
+  const nounAtStart = documentLabel.charAt(0) + noun.slice(1);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // The share modal stacked on top closes itself on Escape; without this guard
@@ -66,7 +73,7 @@ export default function CreditNotePreview({
         setPdfUrl(nextUrl);
       } catch (err) {
         if (!isMounted) return;
-        const message = getApiErrorMessage(err, 'Unable to load credit note PDF preview');
+        const message = getApiErrorMessage(err, `Unable to load ${noun} PDF preview`);
         setPdfError(message);
         onError?.(message);
       } finally {
@@ -84,6 +91,7 @@ export default function CreditNotePreview({
         window.URL.revokeObjectURL(objectUrlToRevoke);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [creditNoteId]);
 
   const handleDownloadPdf = async () => {
@@ -94,7 +102,7 @@ export default function CreditNotePreview({
       const url = window.URL.createObjectURL(response.data as Blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `credit_note_${(creditNoteNumber || String(creditNoteId)).replace(/\//g, '_')}.pdf`;
+      link.download = noteDocumentFileName(documentLabel, creditNoteNumber, creditNoteId);
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -118,21 +126,21 @@ export default function CreditNotePreview({
     label: 'Download',
     icon: <Download size={16} aria-hidden="true" />,
     onClick: handleDownloadPdf,
-    title: 'Download credit note PDF',
+    title: `Download ${noun} PDF`,
   };
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="credit-note-preview-title">
       <div className="modal-panel modal-panel--invoice-preview">
         <PreviewToolbar
-          eyebrow="Credit note preview"
+          eyebrow={`${nounAtStart} preview`}
           titleId="credit-note-preview-title"
-          title={`Credit Note ${label}`}
+          title={`${documentLabel} ${label}`}
           primary={canShare ? {
             label: 'Share',
             icon: <Share2 size={16} aria-hidden="true" />,
             onClick: () => setShowShareModal(true),
-            title: 'Share a link to this credit note',
+            title: `Share a link to this ${noun}`,
           } : downloadAction}
           secondary={[
             {
@@ -140,7 +148,7 @@ export default function CreditNotePreview({
               icon: <Printer size={16} aria-hidden="true" />,
               onClick: handlePrintPdf,
               disabled: !pdfUrl || loadingPdf || previewFailed,
-              title: 'Print credit note',
+              title: `Print ${noun}`,
             },
             ...(canShare ? [downloadAction] : []),
           ]}
@@ -155,7 +163,7 @@ export default function CreditNotePreview({
           menuOpen={menuOpen}
           onMenuOpenChange={setMenuOpen}
           onClose={onClose}
-          closeLabel="Close credit note preview"
+          closeLabel={`Close ${noun} preview`}
         />
 
         <div className="invoice-pdf-viewer" aria-live="polite">
@@ -178,7 +186,7 @@ export default function CreditNotePreview({
           {!loadingPdf && pdfUrl && !previewFailed ? (
             <iframe
               ref={iframeRef}
-              title={`Credit note ${label} PDF preview`}
+              title={`${nounAtStart} ${label} PDF preview`}
               src={`${pdfUrl}#navpanes=0&toolbar=1&statusbar=0&messages=0`}
               className="invoice-pdf-viewer__frame"
               onError={() => {
@@ -194,8 +202,8 @@ export default function CreditNotePreview({
         <ShareModal
           resourceType="credit_note"
           resourceId={creditNoteId}
-          label={`Credit Note ${label}`}
-          messageLead={`Credit Note ${label}${companyName ? ` from ${companyName}` : ''}`}
+          label={`${documentLabel} ${label}`}
+          messageLead={`${documentLabel} ${label}${companyName ? ` from ${companyName}` : ''}`}
           phone={ledgerPhone}
           onClose={() => setShowShareModal(false)}
         />

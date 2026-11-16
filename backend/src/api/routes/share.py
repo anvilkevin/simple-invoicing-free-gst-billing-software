@@ -42,7 +42,6 @@ from src.services.share_documents import (
     get_ledger,
     get_payment,
     get_quotation,
-    is_outward_credit_note,
 )
 
 __all__ = ["router", "build_share_url"]
@@ -99,8 +98,6 @@ def _validate_resource(db: Session, company_id: int, payload: ShareLinkCreate) -
         credit_note = get_credit_note(db, company_id, payload.resource_id)
         if credit_note is None or credit_note.status != "active":
             raise HTTPException(status_code=404, detail="Credit note not found")
-        if not is_outward_credit_note(credit_note):
-            raise HTTPException(status_code=400, detail="Only a credit note you issued can be shared")
         return
 
     if payload.resource_type == RESOURCE_QUOTATION:

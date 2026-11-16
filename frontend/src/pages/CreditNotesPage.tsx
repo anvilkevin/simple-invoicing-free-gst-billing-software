@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { cancelCreditNote, createCreditNote, listCreditNotes } from '../api/creditNotes';
 import api, { getApiErrorMessage } from '../api/client';
 import CreditNotePreview from '../components/CreditNotePreview';
+import { noteDocumentLabel, noteViewButtonLabel } from '../utils/noteDocument';
 import LedgerCombobox from '../components/LedgerCombobox';
 import StatusToasts from '../components/StatusToasts';
 import EmptyState from '../components/EmptyState';
@@ -1015,17 +1016,15 @@ export default function CreditNotesPage() {
                       <strong style={{ color: 'var(--text)' }}>Total {formatCurrency(creditNote.total_amount, currencyCode)}</strong>
                     </div>
                     <div className="button-row">
-                    {creditNote.direction !== 'inward' ? (
-                      // An inward note is the supplier's own document — nothing of ours to send.
-                      <button
-                        type="button"
-                        className="button button--secondary"
-                        onClick={() => setPreviewCreditNote(creditNote)}
-                      >
-                        <FileText size={16} />
-                        {creditNote.status === 'active' ? 'View / Share' : 'View'}
-                      </button>
-                    ) : null}
+                    {/* An inward note opens as our Debit Note, addressed to the supplier. */}
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => setPreviewCreditNote(creditNote)}
+                    >
+                      <FileText size={16} />
+                      {noteViewButtonLabel(creditNote.status)}
+                    </button>
                     {creditNote.status === 'active' ? (
                       <button
                         type="button"
@@ -1061,6 +1060,7 @@ export default function CreditNotesPage() {
         <CreditNotePreview
           creditNoteId={previewCreditNote.id}
           creditNoteNumber={previewCreditNote.credit_note_number}
+          documentLabel={noteDocumentLabel(previewCreditNote.direction)}
           canShare={previewCreditNote.status === 'active'}
           ledgerPhone={ledgers.find((entry) => entry.id === previewCreditNote.ledger_id)?.phone_number}
           companyName={company?.name}

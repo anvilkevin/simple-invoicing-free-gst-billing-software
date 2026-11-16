@@ -413,8 +413,13 @@ def _whatsapp_destination() -> str:
     return f"https://wa.me/{wa}" if wa else ""
 
 
-def _captions(link: ShareLink) -> tuple[str, str, str]:
+def _captions(link: ShareLink, summary: ShareSummary) -> tuple[str, str, str]:
     """(party label, date label, amount label) for the summary card."""
+    party, date, amount = _default_captions(link)
+    return party, date, summary.amount_caption or amount
+
+
+def _default_captions(link: ShareLink) -> tuple[str, str, str]:
     if link.resource_type == "ledger_statement":
         return "Account", "Period", "Closing balance"
     if link.resource_type == "payment":
@@ -508,7 +513,7 @@ def public_share_page(
 
     base = _base_path(request)
     origin = _origin(request)
-    party_caption, date_caption, amount_caption = _captions(link)
+    party_caption, date_caption, amount_caption = _captions(link, summary)
 
     description_parts = [p for p in (summary.party_name, summary.amount_label, summary.date_label) if p]
 

@@ -14,7 +14,7 @@ description: "Plain-English meanings of GST and accounting terms used in Simple 
 | **CGST, SGST** | Central and state GST, charged on sales within a state. Each is half the rate. |
 | **COGS** | Cost of goods sold: net units sold × cost per unit. |
 | **Credit note** | A document that reduces what a customer owes, after an invoice was issued. |
-| **Debit note** | How the app records a credit note received from a supplier. |
+| **Debit note** | A document you send a supplier for a purchase return or discount. The app also uses it to record the supplier's credit note. |
 | **Delivery challan** | A document listing goods you send to someone without a tax invoice. It takes the goods out of stock but is not a bill. |
 | **Dr, Cr** | Debit and credit. On a ledger, Dr means they owe you and Cr means you owe them. |
 | **E-way bill** | A government document for moving goods above a value limit. |

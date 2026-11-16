@@ -271,14 +271,21 @@ def get_quotation(db: Session, company_id: int, quotation_id: int) -> Quotation 
     )
 
 
-def is_outward_credit_note(credit_note: CreditNote) -> bool:
-    """Whether this is a note we issued, and so one we can print and send.
+def credit_note_document_label(credit_note: CreditNote) -> str:
+    """What the note prints as: "Credit Note" for a sale, "Debit Note" for a purchase.
 
-    An inward note is the supplier's own document, recorded here only to reverse
-    the input tax; printing it under our letterhead would forge theirs. Rows from
-    before the direction column existed are all outward.
+    An inward note (a purchase return or a supplier's discount) numbers out of our
+    own Debit Note series, so it prints as our debit note, issued by us to the
+    supplier. The supplier's credit note only appears on it as a reference. Rows
+    from before the direction column existed are all outward.
     """
-    return (credit_note.direction or "outward") == "outward"
+    return "Debit Note" if credit_note.direction == "inward" else "Credit Note"
+
+
+def credit_note_pdf_filename(credit_note: CreditNote) -> str:
+    """``credit_note_<number>.pdf`` or ``debit_note_<number>.pdf``."""
+    prefix = credit_note_document_label(credit_note).lower().replace(" ", "_")
+    return f"{prefix}_{_safe_ledger_slug(credit_note.credit_note_number)}.pdf"
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +581,7 @@ def render_receipt_pdf(db: Session, company_id: int, payment_id: int) -> BytesIO
 
 def build_credit_note_html(db: Session, company_id: int, credit_note_id: int) -> str:
     credit_note = get_credit_note(db, company_id, credit_note_id)
-    if credit_note is None or not is_outward_credit_note(credit_note):
+    if credit_note is None:
         raise HTTPException(status_code=404, detail="Credit note not found")
 
     invoice_ids = [ref.invoice_id for ref in credit_note.invoice_refs]
@@ -660,6 +667,9 @@ class ShareSummary:
     # (valid until, expired, converted). Printed on the page, not just in the PDF.
     document_note: str | None = None
     status_notice: str | None = None
+    # Overrides the card's amount caption, which otherwise follows the resource
+    # type. A debit note shares the credit note's resource type but not its "Credit".
+    amount_caption: str | None = None
 
 
 def _upi_fields(payment: UpiPaymentRequest | None, currency: str, *, with_button: bool = False) -> dict:
@@ -823,19 +833,22 @@ def build_share_summary(db: Session, link: ShareLink) -> ShareSummary | None:
 
     if link.resource_type == RESOURCE_CREDIT_NOTE:
         credit_note = get_credit_note(db, link.company_id, link.resource_id)
-        if credit_note is None or not is_outward_credit_note(credit_note):
+        if credit_note is None:
             return None
-        # Credit, not a bill: never an offer to pay.
+        label = credit_note_document_label(credit_note)
+        # Credit, not a bill: never an offer to pay. Nor is a debit note to a
+        # supplier, which only claims back what we were charged.
         return ShareSummary(
-            title=f"Credit Note {credit_note.credit_note_number}",
+            title=f"{label} {credit_note.credit_note_number}",
             party_name=credit_note.ledger.name if credit_note.ledger else "",
             company_name=company_name,
             amount_label=_fmt_currency(float(credit_note.total_amount or 0), currency),
             date_label=_fmt_date(getattr(credit_note, "credit_note_date", None) or credit_note.created_at),
-            pdf_filename=f"credit_note_{_safe_ledger_slug(credit_note.credit_note_number)}.pdf",
+            pdf_filename=credit_note_pdf_filename(credit_note),
             available=credit_note.status == "active",
             logo_data=logo_data,
             logo_mime_type=logo_mime_type,
+            amount_caption="Debit" if label == "Debit Note" else None,
         )
 
     if link.resource_type == RESOURCE_QUOTATION:

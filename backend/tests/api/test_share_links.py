@@ -1210,16 +1210,82 @@ def test_credit_note_share_link_renders_end_to_end(client, db_session):
     assert pdf.content.startswith(b"%PDF")
 
 
-def test_an_inward_credit_note_cannot_be_printed_or_shared(client, db_session):
-    # It is the supplier's document; printing it under our letterhead would forge theirs.
+def _purchase_return(db, company: CompanyProfile, ledger: Ledger) -> CreditNote:
+    """An inward note against a purchase whose supplier invoice number differs from ours."""
+    purchase = _invoice(db, company, ledger, number="PUR-0009")
+    purchase.voucher_type = "purchase"
+    purchase.supplier_invoice_number = "SUPINV-77"
+    db.commit()
+    credit_note = _credit_note(db, company, ledger, purchase, direction="inward")
+    credit_note.supplier_credit_note_date = datetime(2026, 6, 4).date()
+    db.commit()
+    db.refresh(credit_note)
+    return credit_note
+
+
+def test_an_inward_note_prints_and_shares_as_our_debit_note(client, db_session):
+    from src.services.share_documents import build_credit_note_html
+
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company, name="Supplier Co")
+    debit_note = _purchase_return(db_session, company, ledger)
+
+    pdf = client.get(f"/api/credit-notes/{debit_note.id}/pdf", headers=_headers(company))
+    assert pdf.status_code == 200, pdf.text
+    assert pdf.content.startswith(b"%PDF")
+    assert pdf.headers["content-disposition"] == 'inline; filename="debit_note_DN-0007.pdf"'
+
+    html = build_credit_note_html(db_session, company.id, debit_note.id)
+    assert "Debit Note DN-0007" in html
+    assert "Credit Note" not in html
+    assert "Total debit" in html
+    assert "Purchase return" in html
+    # Issued by us, to the supplier, against the supplier's own invoice number.
+    assert "Alpha Ltd" in html
+    assert "Supplier Co" in html
+    assert "SUPINV-77" in html
+    assert "PUR-0009" not in html
+    assert "Supplier's credit note: SUP-1 (04 Jun 2026)" in html
+
+    created = _create_link(client, company, "credit_note", debit_note.id)
+    assert created.status_code == 200, created.text
+    token = created.json()["token"]
+    page = client.get(f"/s/{token}")
+    assert page.status_code == 200
+    assert "Debit Note DN-0007" in page.text
+    assert "Credit Note" not in page.text
+    shared_pdf = client.get(f"/s/{token}/pdf?download=1")
+    assert shared_pdf.status_code == 200
+    assert "debit_note_DN-0007.pdf" in shared_pdf.headers["content-disposition"]
+
+
+def test_an_inward_note_falls_back_to_our_purchase_number(client, db_session):
+    from src.services.share_documents import build_credit_note_html
+
+    company = _company(db_session, "Alpha Ltd")
+    ledger = _ledger(db_session, company, name="Supplier Co")
+    purchase = _invoice(db_session, company, ledger, number="PUR-0010")
+    purchase.voucher_type = "purchase"
+    db_session.commit()
+    debit_note = _credit_note(db_session, company, ledger, purchase, direction="inward")
+
+    html = build_credit_note_html(db_session, company.id, debit_note.id)
+    assert "PUR-0010" in html
+
+
+def test_an_outward_note_still_prints_as_a_credit_note(client, db_session):
+    from src.services.share_documents import build_credit_note_html
+
     company = _company(db_session, "Alpha Ltd")
     ledger = _ledger(db_session, company)
-    credit_note = _credit_note(
-        db_session, company, ledger, _invoice(db_session, company, ledger), direction="inward"
-    )
+    credit_note = _credit_note(db_session, company, ledger, _invoice(db_session, company, ledger))
 
-    assert client.get(f"/api/credit-notes/{credit_note.id}/pdf", headers=_headers(company)).status_code == 404
-    assert _create_link(client, company, "credit_note", credit_note.id).status_code == 400
+    html = build_credit_note_html(db_session, company.id, credit_note.id)
+    assert "Credit Note CN/26/0007" in html
+    assert "Debit Note" not in html
+    assert "Sales return" in html
+    assert "Total credit" in html
+    assert "Supplier" not in html
 
 
 def test_cancelled_credit_note_shows_the_unavailable_page(client, db_session):

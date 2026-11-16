@@ -1,10 +1,15 @@
-"""Credit note HTML template generation.
+"""Credit note and debit note HTML template generation.
 
 Laid out like the sales invoice it reverses, so the customer can hold the two
 side by side: same header, same party block, same tax columns. The note's own
 amounts are the source of truth; the original invoices only supply the party
 and seller snapshot they were issued under, and the invoice numbers a GST
 credit note has to cite.
+
+An inward note (a purchase return or a supplier's discount) prints as our Debit
+Note: issued by us, addressed to the supplier, citing the supplier's own
+invoice numbers. Purchases snapshot the company and the supplier into the same
+columns as a sale, so the header and the party block need no change.
 """
 
 from decimal import Decimal
@@ -24,9 +29,24 @@ CREDIT_NOTE_TYPE_LABELS = {
     "adjustment": "Adjustment",
 }
 
+DEBIT_NOTE_TYPE_LABELS = {
+    **CREDIT_NOTE_TYPE_LABELS,
+    "return": "Purchase return",
+}
+
 
 def _fmt_date(value) -> str:
     return value.strftime("%d %b %Y") if value else "N/A"
+
+
+def _invoice_reference(invoice: Invoice, inward: bool) -> str:
+    """The invoice number the note cites, escaped.
+
+    A debit note cites the supplier's invoice, the number the supplier knows it
+    by; our own purchase number is only the fallback.
+    """
+    number = (invoice.supplier_invoice_number if inward else None) or invoice.invoice_number
+    return _e(number or f"#{invoice.id}")
 
 
 def _join_parts(parts: list[str]) -> str:
@@ -52,12 +72,14 @@ def _build_credit_note_html(
     company: CompanyProfile | None,
     ledger: Ledger | None,
 ) -> str:
-    """Generate HTML for an outward credit note.
+    """Generate HTML for a credit note, or for a debit note when the note is inward.
 
     ``invoices`` are the note's referenced invoices, oldest first. The first one
     decides the seller and party snapshot and whether tax splits as IGST or
     CGST + SGST — the same rule ``create_credit_note`` used to compute the amounts.
     """
+    inward = credit_note.direction == "inward"
+    document_label = "Debit Note" if inward else "Credit Note"
     first_invoice = invoices[0] if invoices else None
     invoice_by_id = {invoice.id: invoice for invoice in invoices}
     product_map = {product.id: product for product in products}
@@ -103,7 +125,7 @@ def _build_credit_note_html(
             product_name = f"Discount on {product_name}"
         hsn = _e((invoice_item.hsn_sac if invoice_item else None) or (prod.hsn_sac if prod else None) or "N/A")
         source_invoice = invoice_by_id.get(item.invoice_id)
-        source_number = _e(source_invoice.invoice_number or f"#{source_invoice.id}") if source_invoice else "N/A"
+        source_number = _invoice_reference(source_invoice, inward) if source_invoice else "N/A"
 
         tax_amount = Decimal(str(item.tax_amount or 0))
         if interstate_supply:
@@ -158,9 +180,17 @@ def _build_credit_note_html(
     </div>"""
 
     original_invoices_html = ", ".join(
-        f"{_e(invoice.invoice_number or f'#{invoice.id}')} ({_fmt_date(invoice.invoice_date)})"
+        f"{_invoice_reference(invoice, inward)} ({_fmt_date(invoice.invoice_date)})"
         for invoice in invoices
     ) or "N/A"
+
+    supplier_credit_note_html = ""
+    if inward and credit_note.supplier_credit_note_number:
+        supplier_date = credit_note.supplier_credit_note_date
+        supplier_credit_note_html = (
+            f"<p>Supplier's credit note: {_e(credit_note.supplier_credit_note_number)}"
+            f"{f' ({_fmt_date(supplier_date)})' if supplier_date else ''}</p>"
+        )
 
     reason_html = ""
     if credit_note.reason:
@@ -176,7 +206,8 @@ def _build_credit_note_html(
         if cancelled
         else ""
     )
-    type_label = CREDIT_NOTE_TYPE_LABELS.get(credit_note.credit_note_type, "Credit note")
+    type_labels = DEBIT_NOTE_TYPE_LABELS if inward else CREDIT_NOTE_TYPE_LABELS
+    type_label = type_labels.get(credit_note.credit_note_type, document_label.capitalize())
 
     return f"""<!DOCTYPE html>
 <html>
@@ -356,7 +387,7 @@ def _build_credit_note_html(
 </head>
 <body>
 <div class="sheet">
-  <div class="sheet__title">Credit Note</div>
+  <div class="sheet__title">{document_label}</div>
   {cancelled_html}
   <header class="sheet__header">
     <div>
@@ -369,9 +400,10 @@ def _build_credit_note_html(
     </div>
     <div class="sheet__meta">
       <span class="sheet__badge">{_e(type_label)}</span>
-      <h2>Credit Note {_e(credit_note.credit_note_number)}</h2>
+      <h2>{document_label} {_e(credit_note.credit_note_number)}</h2>
       <p>Date: {_fmt_date(getattr(credit_note, "credit_note_date", None) or credit_note.created_at)}</p>
       <p>Against invoice: {original_invoices_html}</p>
+      {supplier_credit_note_html}
     </div>
   </header>
 
@@ -409,7 +441,7 @@ def _build_credit_note_html(
     <p>Taxable: {_fmt_currency(float(credit_note.taxable_amount or 0), currency)}</p>
     {tax_breakup_rows}
     <p>Total tax: {_fmt_currency(total_tax, currency)}</p>
-    {tcs_reversed_html}<p class="eyebrow" style="margin-top: 10px;">Total credit</p>
+    {tcs_reversed_html}<p class="eyebrow" style="margin-top: 10px;">Total {"debit" if inward else "credit"}</p>
     <p class="sheet__total-value">{_fmt_currency(float(credit_note.total_amount or 0), currency)}</p>
     <p class="sheet__amount-words">{_amount_in_words_indian(float(credit_note.total_amount or 0), currency)}</p>
     <p class="muted-text">Authorized by {_e(seller_name) or 'Billing company'}</p>

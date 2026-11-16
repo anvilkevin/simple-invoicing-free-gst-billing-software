@@ -16,7 +16,7 @@ from src.models.credit_note import CreditNote, CreditNoteInvoiceRef
 from src.models.user import User
 from src.schemas.credit_note import CreditNoteCreate, CreditNoteOut, PaginatedCreditNoteOut
 from src.services.credit_note import cancel_credit_note, create_credit_note
-from src.services.share_documents import render_credit_note_pdf
+from src.services.share_documents import credit_note_document_label, render_credit_note_pdf
 from src.services.company_access import company_scope
 
 router = APIRouter()
@@ -169,7 +169,7 @@ def download_credit_note_pdf(
 ):
     # Rendered in src/services/share_documents, like invoices and receipts, so the
     # owner's copy and the one a customer opens from a share link are the same
-    # document. 404s for an inward note: that one is the supplier's to issue.
+    # document. An inward note prints as our Debit Note, addressed to the supplier.
     company_id = active_company.id
     cn = (
         db.query(CreditNote)
@@ -182,7 +182,8 @@ def download_credit_note_pdf(
 
     buf = render_credit_note_pdf(db, company_id, cn_id)
 
-    filename = f"credit_note_{cn.credit_note_number.replace('/', '_')}.pdf"
+    prefix = credit_note_document_label(cn).lower().replace(" ", "_")
+    filename = f"{prefix}_{cn.credit_note_number.replace('/', '_')}.pdf"
     return StreamingResponse(
         buf,
         media_type="application/pdf",

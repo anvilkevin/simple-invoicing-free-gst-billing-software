@@ -59,7 +59,12 @@ A note dated in an earlier month changes the GSTR-1 for that month, and later re
 
 The **Credit note feed** on the right has search and filters for status, voucher and dates. **Export CSV** downloads the current page.
 
-**View / Share** opens a sales credit note's PDF, with **Share**, **Print** and **Download**.
+**View / Share** opens the note's PDF, with **Share**, **Print** and **Download**.
+
+- A sales note prints as your **Credit Note**, addressed to the customer.
+- A purchase note prints as your **Debit Note** with its `DN-…` number, addressed to the supplier. It cites the supplier's invoice number, and the supplier's credit note number if you entered one. Send it with the goods you return, so the supplier knows what to credit.
+
+**View** on a Credit Note or Debit Note row in a [ledger](../ledgers/) opens the same preview.
 
 ::: danger Cancelling is immediate and permanent
 **Cancel credit note** has no confirmation step, and **deletes** the note. Its stock movement is reversed and the invoice's balance is restored. If you might need the record, do not cancel it. A cancelled note will not appear under the **Cancelled** filter.
